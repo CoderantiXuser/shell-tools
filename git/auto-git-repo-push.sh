@@ -1,10 +1,14 @@
 #!/bin/bash
 
+# Exit on error, undefined variable, or pipe failure
+set -euo pipefail
+
 # --- Configuration ---
 COMMIT_MESSAGE="Initial commit"
 
 # --- Global Variables ---
 GUIDE_MODE=false
+DRY_RUN=false
 REMOTE_URL=""
 DEFAULT_BRANCH=""
 REPO_EXISTS_AND_CONTINUE=false # New global variable
@@ -19,7 +23,178 @@ COLOR_CYAN="\033[0;36m"
 COLOR_MAGENTA="\033[0;35m"
 COLOR_BOLD="\033[1m"
 
+# --- Global Variables ---
+USE_PAT=false # New global variable to indicate if PAT should be used for authentication
+
 # --- Functions ---
+
+# Function to execute and log git commands
+run_git_command() {
+  if [ "$DRY_RUN" = true ]; then
+    echo -e "${COLOR_YELLOW}[DRY RUN] Would execute: git $*${COLOR_RESET}"
+  else
+    echo -e "${COLOR_CYAN}▶ Executing: git $*${COLOR_RESET}"
+    git "$@"
+  fi
+}
+
+# Function for cleanup on exit
+cleanup() {
+  echo -e "\n${COLOR_YELLOW}Exiting script. Cleaning up...${COLOR_RESET}"
+  # No temporary files to clean up in this version, but trap is here for future use
+}
+trap cleanup EXIT INT TERM
+
+# Function to check if an SSH key is present and loaded
+check_ssh_key_exists() {
+  echo -e "${COLOR_BLUE}Checking for existing SSH keys...${COLOR_RESET}"
+  # Check for common SSH key files
+  if [ -f "$HOME/.ssh/id_rsa" ] || [ -f "$HOME/.ssh/id_ed25519" ]; then
+    echo -e "${COLOR_GREEN}✅ SSH key file found.${COLOR_RESET}"
+    # Check if ssh-agent is running
+    if pgrep -q "ssh-agent"; then
+      echo -e "${COLOR_GREEN}✅ ssh-agent is running.${COLOR_RESET}"
+      # Check if keys are added to ssh-agent
+      if ssh-add -l &> /dev/null; then
+        echo -e "${COLOR_GREEN}✅ SSH key loaded into ssh-agent.${COLOR_RESET}"
+        return 0 # SSH key exists and is loaded
+      else
+        echo -e "${COLOR_YELLOW}⚠️ SSH key file found, but not loaded into ssh-agent. Attempting to add...${COLOR_RESET}"
+        ssh-add "$HOME/.ssh/id_rsa" 2>/dev/null || ssh-add "$HOME/.ssh/id_ed25519" 2>/dev/null
+        if ssh-add -l &> /dev/null; then
+          echo -e "${COLOR_GREEN}✅ SSH key successfully added to ssh-agent.${COLOR_RESET}"
+          return 0
+        else
+          echo -e "${COLOR_RED}❌ Failed to add SSH key to ssh-agent. You may need to start ssh-agent or provide a passphrase.${COLOR_RESET}"
+          return 1
+        fi
+      fi
+    else
+      echo -e "${COLOR_YELLOW}⚠️ ssh-agent is not running. Starting it...${COLOR_RESET}"
+      eval "$(ssh-agent -s)" > /dev/null
+      if pgrep -q "ssh-agent"; then
+        echo -e "${COLOR_GREEN}✅ ssh-agent started.${COLOR_RESET}"
+        echo -e "${COLOR_YELLOW}Attempting to add SSH key...${COLOR_RESET}"
+        ssh-add "$HOME/.ssh/id_rsa" 2>/dev/null || ssh-add "$HOME/.ssh/id_ed25519" 2>/dev/null
+        if ssh-add -l &> /dev/null; then
+          echo -e "${COLOR_GREEN}✅ SSH key successfully added to ssh-agent.${COLOR_RESET}"
+          return 0
+        else
+          echo -e "${COLOR_RED}❌ Failed to add SSH key to ssh-agent. You may need to provide a passphrase.${COLOR_RESET}"
+          return 1
+        fi
+      else
+        echo -e "${COLOR_RED}❌ Failed to start ssh-agent.${COLOR_RESET}"
+        return 1
+      fi
+    fi
+  else
+    echo -e "${COLOR_YELLOW}⚠️ No SSH key file found in ~/.ssh/.${COLOR_RESET}"
+    return 1 # No SSH key found
+  fi
+}
+
+# Function to guide user through SSH key setup
+setup_ssh_key() {
+  echo -e "${COLOR_BOLD}${COLOR_MAGENTA}--- Setting up SSH Key ---${COLOR_RESET}"
+  echo -e "${COLOR_YELLOW}It looks like you don't have an SSH key set up or loaded.${COLOR_RESET}"
+  echo -e "${COLOR_YELLOW}We will now guide you through creating one and adding it to your GitHub account.${COLOR_RESET}"
+  continue_or_exit
+
+  echo -e "${COLOR_BLUE}1. Generating a new SSH key...${COLOR_RESET}"
+  echo -e "${COLOR_YELLOW}When prompted, you can press Enter to accept the default file location and passphrase (though a passphrase is recommended for security).${COLOR_RESET}"
+  local user_email
+  user_email=$(run_git_command config user.email)
+  ssh-keygen -t ed25519 -C "$user_email"
+  if [ $? -ne 0 ]; then
+    error_exit "Failed to generate SSH key."
+  fi
+  echo -e "${COLOR_GREEN}✅ SSH key generated.${COLOR_RESET}"
+  continue_or_exit
+
+  echo -e "${COLOR_BLUE}2. Starting the ssh-agent...${COLOR_RESET}"
+  eval "$(ssh-agent -s)" > /dev/null
+  if [ $? -ne 0 ]; then
+    error_exit "Failed to start ssh-agent."
+  fi
+  echo -e "${COLOR_GREEN}✅ ssh-agent started.${COLOR_RESET}"
+  continue_or_exit
+
+  echo -e "${COLOR_BLUE}3. Adding your SSH key to the ssh-agent...${COLOR_RESET}"
+  ssh-add "$HOME/.ssh/id_ed25519"
+  if [ $? -ne 0 ]; then
+    error_exit "Failed to add SSH key to ssh-agent. You may need to provide a passphrase."
+  fi
+  echo -e "${COLOR_GREEN}✅ SSH key added to ssh-agent.${COLOR_RESET}"
+  continue_or_exit
+
+  echo -e "${COLOR_BOLD}${COLOR_MAGENTA}--- IMPORTANT: Add your SSH Public Key to GitHub ---${COLOR_RESET}"
+  echo -e "${COLOR_YELLOW}To use SSH for GitHub, you need to add your public key to your GitHub account.${COLOR_RESET}"
+  echo -e "${COLOR_YELLOW}Your public key is located at: ${COLOR_BOLD}$HOME/.ssh/id_ed25519.pub${COLOR_RESET}"
+  echo -e "${COLOR_YELLOW}Copy the content of this file and add it to your GitHub SSH keys settings.${COLOR_RESET}"
+  echo -e "${COLOR_YELLOW}You can copy it using: ${COLOR_CYAN}cat ~/.ssh/id_ed25519.pub | xclip -selection clipboard${COLOR_RESET} (install xclip if needed)"
+  echo -e "${COLOR_YELLOW}Or simply display it: ${COLOR_CYAN}cat ~/.ssh/id_ed25519.pub${COLOR_RESET}"
+  echo -e "${COLOR_YELLOW}Then go to: ${COLOR_CYAN}https://github.com/settings/keys${COLOR_RESET}"
+  continue_or_exit
+}
+
+# Function to validate the remote URL
+validate_remote_url() {
+  local url=$1
+  local ssh_regex="^git@github\.com:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$"
+  local https_regex="^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$"
+
+  if [[ $url =~ $ssh_regex ]] || [[ $url =~ $https_regex ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# Function to check and setup SSH or prompt for PAT
+check_and_setup_ssh_or_pat() {
+  if [ "$GUIDE_MODE" = true ]; then
+    echo -e "${COLOR_BOLD}${COLOR_MAGENTA}--- Step X: Configure Authentication Method ---${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}GitHub recommends using SSH keys or Personal Access Tokens (PATs) for authentication.${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}We'll check your current setup and help you choose.${COLOR_RESET}"
+    continue_or_exit
+  fi
+
+  if check_ssh_key_exists; then
+    echo -e "${COLOR_GREEN}An SSH key is detected and loaded.${COLOR_RESET}"
+    printf "${COLOR_CYAN}Hint: Do you want to use a Personal Access Token (PAT) instead of SSH for this push? (y/N): ${COLOR_RESET}"
+    read use_pat_choice
+    use_pat_choice=${use_pat_choice:-n} # Default to 'n'
+    if [[ "$use_pat_choice" =~ ^[Yy]$ ]]; then
+      USE_PAT=true
+      echo -e "${COLOR_YELLOW}Proceeding with Personal Access Token (PAT) authentication.${COLOR_RESET}"
+    else
+      USE_PAT=false
+      echo -e "${COLOR_YELLOW}Proceeding with SSH key authentication.${COLOR_RESET}"
+    fi
+  else
+    echo -e "${COLOR_YELLOW}No SSH key detected or loaded.${COLOR_RESET}"
+    printf "${COLOR_CYAN}Hint: Do you want to set up an SSH key now (recommended) or use a Personal Access Token (PAT)? (ssh/pat): ${COLOR_RESET}"
+    read auth_method_choice
+    auth_method_choice=${auth_method_choice:-ssh} # Default to 'ssh'
+
+    if [[ "$auth_method_choice" =~ ^[Ss][Ss][Hh]$ ]]; then
+      setup_ssh_key
+      USE_PAT=false
+    elif [[ "$auth_method_choice" =~ ^[Pp][Aa][Tt]$ ]]; then
+      USE_PAT=true
+      echo -e "${COLOR_YELLOW}Proceeding with Personal Access Token (PAT) authentication.${COLOR_RESET}"
+      echo -e "${COLOR_YELLOW}Remember to generate a PAT from your GitHub settings and use it as your password when prompted.${COLOR_RESET}"
+      echo -e "${COLOR_CYAN}GitHub PAT generation link: https://github.com/settings/tokens${COLOR_RESET}"
+      continue_or_exit
+    else
+      error_exit "Invalid choice. Exiting script."
+    fi
+  fi
+  continue_or_exit
+}
+
+# Function to check if a command exists
 
 # Function to check if a command exists
 command_exists () {
@@ -74,7 +249,7 @@ check_existing_repo() {
   fi
 
   echo -e "${COLOR_BLUE}Checking if this is already a Git repository...${COLOR_RESET}"
-  if git rev-parse --is-inside-work-tree &> /dev/null; then
+  if run_git_command rev-parse --is-inside-work-tree &> /dev/null; then
     echo -e "${COLOR_YELLOW}⚠️ This directory is already a Git repository.${COLOR_RESET}"
     echo -e "${COLOR_YELLOW}What would you like to do?${COLOR_RESET}"
     echo -e "  ${COLOR_CYAN}1) Continue with the existing repository (add and push files).${COLOR_RESET}"
@@ -136,7 +311,7 @@ initialize_git() {
   fi
 
   echo -e "${COLOR_BLUE}Initializing new Git repository...${COLOR_RESET}"
-  if ! git init; then
+  if ! run_git_command init; then
     error_exit "Failed to initialize Git repository."
   fi
   echo -e "${COLOR_GREEN}✅ Git repository initialized.${COLOR_RESET}"
@@ -152,9 +327,9 @@ get_default_branch() {
   fi
 
   echo -e "${COLOR_BLUE}Determining default branch name...${COLOR_RESET}"
-  DEFAULT_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+  DEFAULT_BRANCH=$(run_git_command symbolic-ref --short HEAD 2>/dev/null || true)
   if [ -z "$DEFAULT_BRANCH" ]; then
-    if git branch -m main &> /dev/null; then
+    if run_git_command branch -m main &> /dev/null; then
       DEFAULT_BRANCH="main"
     else
       DEFAULT_BRANCH="master"
@@ -180,7 +355,7 @@ add_files_to_staging() {
   fi
 
   echo -e "${COLOR_BLUE}Adding all files to the staging area...${COLOR_RESET}"
-  if ! git add .; then
+  if ! run_git_command add .; then
     error_exit "Failed to add files to staging area."
   fi
   echo -e "${COLOR_GREEN}✅ All files added to staging area.${COLOR_RESET}"
@@ -199,17 +374,20 @@ make_initial_commit() {
     echo -e "${COLOR_BOLD}${COLOR_MAGENTA}--- Step 6: Make the Initial Commit ---${COLOR_RESET}"
     echo -e "${COLOR_YELLOW}'git commit' saves the changes from the staging area to your repository's history.${COLOR_RESET}"
     echo -e "${COLOR_YELLOW}The commit message describes the changes you've made.${COLOR_RESET}"
-    echo -e "${COLOR_YELLOW}The default commit message will be: '${COLOR_BOLD}$COMMIT_MESSAGE${COLOR_RESET}${COLOR_YELLOW}'${COLOR_RESET}"
-    printf "${COLOR_CYAN}Hint: Do you want to make the initial commit? (Y/n): ${COLOR_RESET}" 
-    read confirm_commit
-    confirm_commit=${confirm_commit:-y} # Default to 'y'
-    if ! [[ "$confirm_commit" =~ ^[Yy]$ ]]; then
-      error_exit "Initial commit cancelled by user."
-    fi
   fi
 
+  local repo_name
+  repo_name=$(basename "$PWD")
+  local suggested_commit_message="Initial commit for ${repo_name}"
+
+  printf "${COLOR_CYAN}Enter a commit message (or press Enter to use the default):\n${COLOR_RESET}"
+  printf "${COLOR_YELLOW}Default: ${suggested_commit_message}${COLOR_RESET}\n> "
+  read -r custom_commit_message
+
+  COMMIT_MESSAGE=${custom_commit_message:-$suggested_commit_message}
+
   echo -e "${COLOR_BLUE}Making the initial commit...${COLOR_RESET}"
-  if ! git commit -m "$COMMIT_MESSAGE"; then
+  if ! run_git_command commit -m "$COMMIT_MESSAGE"; then
     error_exit "Failed to make the initial commit."
   fi
   echo -e "${COLOR_GREEN}✅ Initial commit created.${COLOR_RESET}"
@@ -220,21 +398,51 @@ prompt_for_remote_url() {
   if [ "$GUIDE_MODE" = true ]; then
     echo -e "${COLOR_BOLD}${COLOR_MAGENTA}--- Step 7: Provide Remote Repository URL --- ${COLOR_RESET}"
     echo -e "${COLOR_YELLOW}A remote repository is where your project's code will be stored online (e.g., GitHub, GitLab).${COLOR_RESET}"
-    echo -e "${COLOR_YELLOW}You need to provide the URL of your empty remote repository.${COLOR_RESET}"
-    echo -e "${COLOR_YELLOW}Example: https://github.com/your-username/your-repo-name.git${COLOR_RESET}"
+    if [ "$USE_PAT" = true ]; then
+      echo -e "${COLOR_YELLOW}You need to provide the HTTPS URL of your empty remote repository.${COLOR_RESET}"
+      echo -e "${COLOR_YELLOW}Example: https://github.com/your-username/your-repo-name.git${COLOR_RESET}"
+    else
+      echo -e "${COLOR_YELLOW}You need to provide the SSH URL of your empty remote repository.${COLOR_RESET}"
+      echo -e "${COLOR_YELLOW}Example: git@github.com:your-username/your-repo-name.git${COLOR_RESET}"
+    fi
   fi
 
   # Try to automatically determine the remote URL if 'origin' already exists
-  EXISTING_REMOTE=$(git remote get-url origin 2>/dev/null)
+  EXISTING_REMOTE=$(run_git_command remote get-url origin 2>/dev/null || true)
   if [ -n "$EXISTING_REMOTE" ]; then
     REMOTE_URL="$EXISTING_REMOTE"
     echo -e "${COLOR_GREEN}✅ Remote URL 'origin' already configured: ${COLOR_BOLD}$REMOTE_URL${COLOR_RESET}"
   else
-    printf "${COLOR_CYAN}Hint: Enter the GitHub repository URL: ${COLOR_RESET}" 
-    read REMOTE_URL
+    local github_user
+    github_user=$(run_git_command config github.user || run_git_command config user.name || echo "")
+    local repo_name
+    repo_name=$(basename "$PWD")
+    local suggested_url=""
+
+    if [ -n "$github_user" ]; then
+      if [ "$USE_PAT" = true ]; then
+        suggested_url="https://github.com/${github_user}/${repo_name}.git"
+      else
+        suggested_url="git@github.com:${github_user}/${repo_name}.git"
+      fi
+      printf "${COLOR_CYAN}Enter the remote repository URL (or press Enter to use the default):\n${COLOR_RESET}"
+      printf "${COLOR_YELLOW}Suggested: ${suggested_url}${COLOR_RESET}\n> "
+    else
+      if [ "$USE_PAT" = true ]; then
+        printf "${COLOR_CYAN}Hint: Enter the GitHub HTTPS repository URL: ${COLOR_RESET}"
+      else
+        printf "${COLOR_CYAN}Hint: Enter the GitHub SSH repository URL: ${COLOR_RESET}"
+      fi
+    fi
+
+    read -r custom_remote_url
+    REMOTE_URL=${custom_remote_url:-$suggested_url}
 
     if [ -z "$REMOTE_URL" ]; then
       error_exit "No remote URL provided. Exiting."
+    fi
+    if ! validate_remote_url "$REMOTE_URL"; then
+      error_exit "Invalid remote URL format. Please use a valid GitHub SSH or HTTPS URL."
     fi
   fi
   continue_or_exit
@@ -248,13 +456,34 @@ add_or_update_remote() {
   fi
 
   echo -e "${COLOR_BLUE}Adding remote origin: ${COLOR_BOLD}$REMOTE_URL${COLOR_RESET}"
-  if git remote get-url origin &> /dev/null; then
-    EXISTING_REMOTE_URL=$(git remote get-url origin)
-    if [ "$EXISTING_REMOTE_URL" == "$REMOTE_URL" ]; then
+  if run_git_command remote get-url origin &> /dev/null; then
+    EXISTING_REMOTE_URL=$(run_git_command remote get-url origin)
+
+    # Determine if existing remote is HTTPS or SSH
+    if [[ "$EXISTING_REMOTE_URL" == git@* ]]; then
+      EXISTING_REMOTE_TYPE="ssh"
+    else
+      EXISTING_REMOTE_TYPE="https"
+    fi
+
+    TARGET_REMOTE_URL="$REMOTE_URL"
+
+    # Convert URL if necessary based on USE_PAT
+    if [ "$USE_PAT" = true ] && [ "$EXISTING_REMOTE_TYPE" = "ssh" ]; then
+      # Convert SSH to HTTPS
+      TARGET_REMOTE_URL=$(echo "$REMOTE_URL" | sed -E 's/git@github.com:(.*)\.git/https:\/\/github.com\/\1.git/')
+      echo -e "${COLOR_YELLOW}Converting SSH remote to HTTPS: ${COLOR_BOLD}$TARGET_REMOTE_URL${COLOR_RESET}"
+    elif [ "$USE_PAT" = false ] && [ "$EXISTING_REMOTE_TYPE" = "https" ]; then
+      # Convert HTTPS to SSH
+      TARGET_REMOTE_URL=$(echo "$REMOTE_URL" | sed -E 's/https:\/\/github.com\/(.*)\.git/git@github.com:\1.git/')
+      echo -e "${COLOR_YELLOW}Converting HTTPS remote to SSH: ${COLOR_BOLD}$TARGET_REMOTE_URL${COLOR_RESET}"
+    fi
+
+    if [ "$EXISTING_REMOTE_URL" == "$TARGET_REMOTE_URL" ]; then
       echo -e "${COLOR_YELLOW}ℹ️  Remote 'origin' already exists and points to the same URL. Skipping adding.${COLOR_RESET}"
     else
       if [ "$GUIDE_MODE" = true ]; then
-        printf "${COLOR_CYAN}Hint: Remote 'origin' already exists and points to a different URL ($EXISTING_REMOTE_URL). Do you want to update it to $REMOTE_URL? (y/N): ${COLOR_RESET}" 
+        printf "${COLOR_CYAN}Hint: Remote 'origin' already exists and points to a different URL ($EXISTING_REMOTE_URL). Do you want to update it to $TARGET_REMOTE_URL? (y/N): ${COLOR_RESET}"
         read UPDATE_REMOTE
         UPDATE_REMOTE=${UPDATE_REMOTE:-n} # Default to 'n'
       else
@@ -262,7 +491,7 @@ add_or_update_remote() {
       fi
 
       if [[ "$UPDATE_REMOTE" =~ ^[Yy]$ ]]; then
-        if ! git remote set-url origin "$REMOTE_URL"; then
+        if ! run_git_command remote set-url origin "$TARGET_REMOTE_URL"; then
           error_exit "Failed to update remote 'origin' URL."
         fi
         echo -e "${COLOR_GREEN}✅ Remote 'origin' URL updated.${COLOR_RESET}"
@@ -271,7 +500,22 @@ add_or_update_remote() {
       fi
     fi
   else
-    if ! git remote add origin "$REMOTE_URL"; then
+    # Add remote based on USE_PAT
+    if [ "$USE_PAT" = true ]; then
+      # Ensure HTTPS URL
+      if [[ "$REMOTE_URL" == git@* ]]; then
+        REMOTE_URL=$(echo "$REMOTE_URL" | sed -E 's/git@github.com:(.*)\.git/https:\/\/github.com\/\1.git/')
+        echo -e "${COLOR_YELLOW}Converting SSH URL to HTTPS for PAT: ${COLOR_BOLD}$REMOTE_URL${COLOR_RESET}"
+      fi
+    else
+      # Ensure SSH URL
+      if [[ "$REMOTE_URL" == https://* ]]; then
+        REMOTE_URL=$(echo "$REMOTE_URL" | sed -E 's/https:\/\/github.com\/(.*)\.git/git@github.com:\1.git/')
+        echo -e "${COLOR_YELLOW}Converting HTTPS URL to SSH: ${COLOR_BOLD}$REMOTE_URL${COLOR_RESET}"
+      fi
+    fi
+
+    if ! run_git_command remote add origin "$REMOTE_URL"; then
       error_exit "Failed to add remote origin. It might already exist or the URL is invalid."
     fi
     echo -e "${COLOR_GREEN}✅ Remote origin added.${COLOR_RESET}"
@@ -293,8 +537,8 @@ push_to_remote() {
   fi
 
   echo -e "${COLOR_BLUE}Pushing changes to the remote repository (${COLOR_BOLD}$DEFAULT_BRANCH${COLOR_RESET}${COLOR_BLUE} branch)...${COLOR_RESET}"
-  if ! git push -u origin "$DEFAULT_BRANCH"; then
-    error_exit "Failed to push changes to the remote repository. Common reasons include:\n  - Authentication issues (e.g., incorrect username/password, SSH key not set up).\n  - Network problems.\n  - Remote repository has changes you need to pull first (e.g., 'git pull origin $DEFAULT_BRANCH')."
+  if ! run_git_command push -u origin "$DEFAULT_BRANCH"; then
+    error_exit "Failed to push changes to the remote repository. Common reasons include:\n  - Authentication issues: GitHub no longer supports password authentication. Please use a Personal Access Token (PAT) or SSH keys. For PATs, generate one from GitHub settings and use it as your password.\n  - Network problems.\n  - Remote repository has changes you need to pull first (e.g., 'git pull origin $DEFAULT_BRANCH')."
   fi
   echo -e "${COLOR_GREEN}🎉 Project successfully pushed to GitHub! 🎉${COLOR_RESET}"
   continue_or_exit
@@ -302,22 +546,43 @@ push_to_remote() {
 
 # --- Main Script Execution ---
 
-# Check for guide mode argument
-if [[ "$1" == "--guide" ]]; then
-  GUIDE_MODE=true
-  echo -e "${COLOR_BOLD}${COLOR_MAGENTA}🚀 Welcome to the Git Repository Setup Guide! 🚀${COLOR_RESET}"
-  echo -e "${COLOR_YELLOW}This interactive guide will walk you through initializing a Git repository and pushing your project to a remote (e.g., GitHub).${COLOR_RESET}"
-  echo -e "${COLOR_YELLOW}We'll go step-by-step, explaining each action.${COLOR_RESET}"
-  continue_or_exit
-fi
+# Main function to parse arguments and control flow
+main() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --guide)
+        GUIDE_MODE=true
+        shift
+        ;;
+      --dry-run)
+        DRY_RUN=true
+        shift
+        ;;
+      *)
+        error_exit "Unknown option: $1"
+        ;;
+    esac
+  done
 
-echo -e "${COLOR_BOLD}${COLOR_MAGENTA}🚀 Git Repository Automation Script 🚀${COLOR_RESET}"
+  if [ "$GUIDE_MODE" = true ]; then
+    echo -e "${COLOR_BOLD}${COLOR_MAGENTA}🚀 Welcome to the Git Repository Setup Guide! 🚀${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}This interactive guide will walk you through setting up your Git repository.${COLOR_RESET}"
+    continue_or_exit
+  fi
+
+  if [ "$DRY_RUN" = true ]; then
+    echo -e "${COLOR_BOLD}${COLOR_YELLOW}DRY RUN MODE ENABLED${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}No actual commands will be executed.${COLOR_RESET}"
+  fi
+
+  echo -e "${COLOR_BOLD}${COLOR_MAGENTA}🚀 Git Repository Automation Script 🚀${COLOR_RESET}"
 echo -e "${COLOR_BOLD}${COLOR_MAGENTA}-------------------------------------${COLOR_RESET}"
 
 check_git_installed
 check_existing_repo
 initialize_git
 get_default_branch
+check_and_setup_ssh_or_pat # New function call
 add_files_to_staging
 make_initial_commit
 prompt_for_remote_url
@@ -326,3 +591,7 @@ push_to_remote
 
 echo -e "${COLOR_BOLD}${COLOR_MAGENTA}-------------------------------------${COLOR_RESET}"
 echo -e "${COLOR_GREEN}Script finished.${COLOR_RESET}"
+}
+
+# Pass all script arguments to the main function
+main "$@"

@@ -41,8 +41,14 @@ Scripts for analyzing Python code.
 
 ## Git Tools
 
-*   **`git/auto-git-repo-push.sh`**: A comprehensive tool for automating the process of initializing a Git repository and pushing it to a remote. It also has a "guide" mode to walk users through the process.
-*   **`auto-git-repo-push.sh`**: Note: This is a duplicate of the script in the `git/` directory.
+*   **`git/auto-git-repo-push.sh`**: A comprehensive, interactive tool to automate initializing a Git repository and pushing it to a remote.
+    *   **Features**:
+        *   `--guide` mode for step-by-step assistance.
+        *   `--dry-run` mode to preview commands without executing them.
+        *   Interactive prompts for commit messages and remote URLs, with smart suggestions.
+        *   Robust authentication flow for both SSH and Personal Access Tokens (PATs).
+        *   Clear logging of all git commands being executed.
+*   **`auto-git-repo-push.sh`**: Note: This script has been removed to avoid duplication. The official script is now in the `git/` directory.
 
 ## Network Scripts
 
