@@ -1,0 +1,268 @@
+Script started at Wed Aug 13 10:39:35 PM CEST 2025
+
+--- lscpu ---
+Architecture:                         x86_64
+CPU op-mode(s):                       32-bit, 64-bit
+Address sizes:                        39 bits physical, 48 bits virtual
+Byte Order:                           Little Endian
+CPU(s):                               4
+On-line CPU(s) list:                  0-3
+Vendor ID:                            GenuineIntel
+Model name:                           Intel(R) Core(TM) i5-7200U CPU @ 2.50GHz
+CPU family:                           6
+Model:                                142
+Thread(s) per core:                   2
+Core(s) per socket:                   2
+Socket(s):                            1
+Stepping:                             9
+CPU(s) scaling MHz:                   100%
+CPU max MHz:                          3100.0000
+CPU min MHz:                          400.0000
+BogoMIPS:                             5399.81
+Flags:                                fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb invpcid_single pti ssbd ibrs ibpb stibp tpr_shadow vnmi flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid mpx rdseed adx smap clflushopt intel_pt xsaveopt xsavec xgetbv1 xsaves dtherm ida arat pln pts hwp hwp_notify hwp_act_window hwp_epp md_clear flush_l1d arch_capabilities
+Virtualization:                       VT-x
+L1d cache:                            64 KiB (2 instances)
+L1i cache:                            64 KiB (2 instances)
+L2 cache:                             512 KiB (2 instances)
+L3 cache:                             3 MiB (1 instance)
+NUMA node(s):                         1
+NUMA node0 CPU(s):                    0-3
+Vulnerability Gather data sampling:   Mitigation; Microcode
+Vulnerability Itlb multihit:          KVM: Mitigation: VMX disabled
+Vulnerability L1tf:                   Mitigation; PTE Inversion; VMX conditional cache flushes, SMT vulnerable
+Vulnerability Mds:                    Mitigation; Clear CPU buffers; SMT vulnerable
+Vulnerability Meltdown:               Mitigation; PTI
+Vulnerability Mmio stale data:        Mitigation; Clear CPU buffers; SMT vulnerable
+Vulnerability Reg file data sampling: Not affected
+Vulnerability Retbleed:               Mitigation; IBRS
+Vulnerability Spec rstack overflow:   Not affected
+Vulnerability Spec store bypass:      Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:             Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:             Mitigation; IBRS; IBPB conditional; STIBP conditional; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected
+Vulnerability Srbds:                  Mitigation; Microcode
+Vulnerability Tsx async abort:        Not affected
+
+--- mpstat -P ALL 1 1 ---
+Linux 6.1.105-antix.1-amd64-smp (antix1) 	08/13/2025 	_x86_64_	(4 CPU)
+
+10:39:36 PM  CPU    %usr   %nice    %sys %iowait    %irq   %soft  %steal  %guest  %gnice   %idle
+10:39:37 PM  all    1.76    0.00    2.27    0.00    0.00    0.00    0.00    0.00    0.00   95.97
+10:39:37 PM    0    5.05    0.00    5.05    0.00    0.00    0.00    0.00    0.00    0.00   89.90
+10:39:37 PM    1    0.00    0.00    1.01    0.00    0.00    0.00    0.00    0.00    0.00   98.99
+10:39:37 PM    2    1.00    0.00    2.00    0.00    0.00    0.00    0.00    0.00    0.00   97.00
+10:39:37 PM    3    1.01    0.00    1.01    0.00    0.00    0.00    0.00    0.00    0.00   97.98
+
+Average:     CPU    %usr   %nice    %sys %iowait    %irq   %soft  %steal  %guest  %gnice   %idle
+Average:     all    1.76    0.00    2.27    0.00    0.00    0.00    0.00    0.00    0.00   95.97
+Average:       0    5.05    0.00    5.05    0.00    0.00    0.00    0.00    0.00    0.00   89.90
+Average:       1    0.00    0.00    1.01    0.00    0.00    0.00    0.00    0.00    0.00   98.99
+Average:       2    1.00    0.00    2.00    0.00    0.00    0.00    0.00    0.00    0.00   97.00
+Average:       3    1.01    0.00    1.01    0.00    0.00    0.00    0.00    0.00    0.00   97.98
+
+--- top -bn1 | head -n 10 ---
+top - 22:39:37 up  2:02,  1 user,  load average: 0.05, 0.22, 0.27
+Tasks: 184 total,   1 running, 183 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :  15452.6 total,  13052.2 free,   1348.6 used,   1557.2 buff/cache     
+MiB Swap:   3072.0 total,   3072.0 free,      0.0 used.  14104.0 avail Mem 
+
+  PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+    1 root      20   0    3300   1948   1800 S   0.0   0.0   0:00.36 init
+    2 root      20   0       0      0      0 S   0.0   0.0   0:00.01 kthreadd
+    3 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 rcu_gp
+
+--- free -h ---
+               total        used        free      shared  buff/cache   available
+Mem:            15Gi       1.3Gi        12Gi       223Mi       1.5Gi        13Gi
+Swap:          3.0Gi          0B       3.0Gi
+
+--- vmstat -s ---
+     15823464 K total memory
+      1381692 K used memory
+       785936 K active memory
+      1242980 K inactive memory
+     13364740 K free memory
+       180828 K buffer memory
+      1413760 K swap cache
+      3145724 K total swap
+            0 K used swap
+      3145724 K free swap
+       136724 non-nice user cpu ticks
+           64 nice user cpu ticks
+        26769 system cpu ticks
+      1856655 idle cpu ticks
+         8507 IO-wait cpu ticks
+            0 IRQ cpu ticks
+         1218 softirq cpu ticks
+            0 stolen cpu ticks
+            0 non-nice guest cpu ticks
+            0 nice guest cpu ticks
+      1315297 K paged in
+       162688 K paged out
+            0 pages swapped in
+            0 pages swapped out
+      8965258 interrupts
+      9558597 CPU context switches
+   1755110248 boot time
+        22926 forks
+
+--- cat /proc/meminfo ---
+MemTotal:       15823464 kB
+MemFree:        13364740 kB
+MemAvailable:   14441772 kB
+Buffers:          180828 kB
+Cached:          1342884 kB
+SwapCached:            0 kB
+Active:           785936 kB
+Inactive:        1242980 kB
+Active(anon):       1580 kB
+Inactive(anon):   732532 kB
+Active(file):     784356 kB
+Inactive(file):   510448 kB
+Unevictable:      200216 kB
+Mlocked:               0 kB
+SwapTotal:       3145724 kB
+SwapFree:        3145724 kB
+Zswap:                 0 kB
+Zswapped:              0 kB
+Dirty:                 4 kB
+Writeback:             0 kB
+AnonPages:        691604 kB
+Mapped:           430960 kB
+Shmem:            228908 kB
+KReclaimable:      70876 kB
+Slab:             114948 kB
+SReclaimable:      70876 kB
+SUnreclaim:        44072 kB
+KernelStack:        5504 kB
+PageTables:        15352 kB
+SecPageTables:         0 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:    11057456 kB
+Committed_AS:    5306036 kB
+VmallocTotal:   34359738367 kB
+VmallocUsed:       37512 kB
+VmallocChunk:          0 kB
+Percpu:             1088 kB
+HardwareCorrupted:     0 kB
+AnonHugePages:    161792 kB
+ShmemHugePages:        0 kB
+ShmemPmdMapped:        0 kB
+FileHugePages:         0 kB
+FilePmdMapped:         0 kB
+CmaTotal:              0 kB
+CmaFree:               0 kB
+HugePages_Total:       0
+HugePages_Free:        0
+HugePages_Rsvd:        0
+HugePages_Surp:        0
+Hugepagesize:       2048 kB
+Hugetlb:               0 kB
+DirectMap4k:      161300 kB
+DirectMap2M:     5564416 kB
+DirectMap1G:    10485760 kB
+
+--- df -h ---
+Filesystem      Size  Used Avail Use% Mounted on
+udev            7.6G     0  7.6G   0% /dev
+tmpfs           1.6G  832K  1.6G   1% /run
+/dev/sda6        40G   26G   12G  68% /
+tmpfs           5.0M  8.0K  5.0M   1% /run/lock
+tmpfs           3.1G   23M  3.0G   1% /dev/shm
+/dev/sda5       488M  130M  323M  29% /boot
+/dev/sda7        20G   17G  2.2G  89% /home
+tmpfs           2.0G  2.4M  2.0G   1% /tmp
+tmpfs           1.6G   12K  1.6G   1% /run/user/1000
+/dev/mmcblk0p1  3.7G  1.3G  2.4G  35% /media/antiXuser/mmcblk0p1-mmc-SA04G_0x4034d68c
+
+--- iostat -xz 1 2 ---
+Linux 6.1.105-antix.1-amd64-smp (antix1) 	08/13/2025 	_x86_64_	(4 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+           6.74    0.00    1.38    0.42    0.00   91.46
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+mmcblk0          0.02      0.67     0.14  86.89    6.01    32.75    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.01
+sda              6.15    178.77     2.51  28.98    0.42    29.09    4.46     22.20     0.59  11.76    1.08     4.98    0.01      0.68     0.00   0.00    0.87    72.82    0.15    0.48    0.01   0.23
+
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+           1.52    0.00    2.27    8.33    0.00   87.88
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+sda              0.00      0.00     0.00   0.00    0.00     0.00  111.00    480.00     4.00   3.48    1.30     4.32    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.14   2.50
+
+--- ip a ---
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host proto kernel_lo 
+       valid_lft forever preferred_lft forever
+2: wlan0: <NO-CARRIER,BROADCAST,MULTICAST,DYNAMIC,UP> mtu 1500 qdisc noqueue state DOWN group default qlen 1000
+    link/ether 68:ec:c5:74:b3:2d brd ff:ff:ff:ff:ff:ff
+
+--- netstat -tulnp ---
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    
+tcp        0      0 127.0.0.1:61209         0.0.0.0:*               LISTEN      -                   
+tcp        0      0 127.0.0.1:25            0.0.0.0:*               LISTEN      -                   
+tcp        0      0 0.0.0.0:45445           0.0.0.0:*               LISTEN      -                   
+tcp        0      0 127.0.0.1:631           0.0.0.0:*               LISTEN      -                   
+tcp        0      0 0.0.0.0:111             0.0.0.0:*               LISTEN      -                   
+tcp        0      0 127.0.0.1:4101          0.0.0.0:*               LISTEN      -                   
+tcp6       0      0 ::1:25                  :::*                    LISTEN      -                   
+tcp6       0      0 ::1:631                 :::*                    LISTEN      -                   
+tcp6       0      0 :::43139                :::*                    LISTEN      -                   
+tcp6       0      0 :::111                  :::*                    LISTEN      -                   
+tcp6       0      0 ::1:4101                :::*                    LISTEN      -                   
+udp        0      0 0.0.0.0:5353            0.0.0.0:*                           -                   
+udp        0      0 0.0.0.0:56254           0.0.0.0:*                           -                   
+udp        0      0 0.0.0.0:111             0.0.0.0:*                           -                   
+udp        0      0 127.0.0.1:812           0.0.0.0:*                           -                   
+udp        0      0 0.0.0.0:59811           0.0.0.0:*                           -                   
+udp6       0      0 :::60364                :::*                                -                   
+udp6       0      0 :::5353                 :::*                                -                   
+udp6       0      0 :::111                  :::*                                -                   
+udp6       0      0 :::58603                :::*                                -                   
+
+--- ping -c 4 google.com ---
+
+--- ps aux --sort=-%mem | head -n 10 ---
+USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+antiXus+ 21547  2.2  2.3 34353580 374212 ?     S<l  22:37   0:03 /opt/brave.com/brave/brave
+antiXus+ 21585  0.6  1.1 34409740 183644 ?     S<l  22:37   0:00 /opt/brave.com/brave/brave --type=gpu-process --crashpad-handler-pid=21551 --enable-crash-reporter=19833498-0035-43ea-9a49-83ddd71c645b, --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAAAEAAAAAAAAAAAAAAAAAABgAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABAAAAAAAAAAEAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --shared-files --field-trial-handle=3,i,5088241369629786152,14030317653483945799,262144 --variations-seed-version=main@9f26eba51a9178270588b40fe6c0c45f77ab1806
+antiXus+ 21623  0.7  1.0 1459745644 163840 ?   S<l  22:37   0:01 /opt/brave.com/brave/brave --type=renderer --crashpad-handler-pid=21551 --enable-crash-reporter=19833498-0035-43ea-9a49-83ddd71c645b, --enable-distillability-service --origin-trial-public-key=bYUKPJoPnCxeNvu72j4EmPuK7tr1PAC7SHh8ld9Mw3E=,fMS4mpO6buLQ/QMd+zJmxzty/VQ6B1EUZqoCU04zoRU= --change-stack-guard-on-fork=enable --lang=en-US --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=5 --time-ticks-at-unix-epoch=-1755112453925711 --launch-time-ticks=4974686508 --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,5088241369629786152,14030317653483945799,262144 --variations-seed-version=main@9f26eba51a9178270588b40fe6c0c45f77ab1806
+antiXus+  3656  0.0  0.8 776560 133928 ?       Sl   20:38   0:04 python /home/antiXuser/Development/_completed_tools/piperui.py
+antiXus+ 21622  0.1  0.8 1459722928 130780 ?   Sl   22:37   0:00 /opt/brave.com/brave/brave --type=renderer --crashpad-handler-pid=21551 --enable-crash-reporter=19833498-0035-43ea-9a49-83ddd71c645b, --enable-distillability-service --origin-trial-public-key=bYUKPJoPnCxeNvu72j4EmPuK7tr1PAC7SHh8ld9Mw3E=,fMS4mpO6buLQ/QMd+zJmxzty/VQ6B1EUZqoCU04zoRU= --change-stack-guard-on-fork=enable --lang=en-US --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=6 --time-ticks-at-unix-epoch=-1755112453925711 --launch-time-ticks=4974685031 --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,5088241369629786152,14030317653483945799,262144 --variations-seed-version=main@9f26eba51a9178270588b40fe6c0c45f77ab1806
+antiXus+ 21644  0.1  0.7 1461438004 118956 ?   S<l  22:37   0:00 /opt/brave.com/brave/brave --type=renderer --crashpad-handler-pid=21551 --enable-crash-reporter=19833498-0035-43ea-9a49-83ddd71c645b, --extension-process --enable-distillability-service --origin-trial-public-key=bYUKPJoPnCxeNvu72j4EmPuK7tr1PAC7SHh8ld9Mw3E=,fMS4mpO6buLQ/QMd+zJmxzty/VQ6B1EUZqoCU04zoRU= --change-stack-guard-on-fork=enable --lang=en-US --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=8 --time-ticks-at-unix-epoch=-1755112453925711 --launch-time-ticks=4974732611 --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,5088241369629786152,14030317653483945799,262144 --variations-seed-version=main@9f26eba51a9178270588b40fe6c0c45f77ab1806
+antiXus+ 21586  0.2  0.7 34042176 117616 ?     Sl   22:37   0:00 /opt/brave.com/brave/brave --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-US --service-sandbox-type=none --crashpad-handler-pid=21551 --enable-crash-reporter=19833498-0035-43ea-9a49-83ddd71c645b, --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,5088241369629786152,14030317653483945799,262144 --variations-seed-version=main@9f26eba51a9178270588b40fe6c0c45f77ab1806
+root      1874  2.7  0.7 839744 113792 tty7    Ssl+ 20:37   3:18 /usr/lib/xorg/Xorg -nolisten tcp -auth /var/run/slimski.auth vt07
+antiXus+ 22579  0.0  0.6 1461426664 96208 ?    S<l  22:38   0:00 /opt/brave.com/brave/brave --type=renderer --crashpad-handler-pid=21551 --enable-crash-reporter=19833498-0035-43ea-9a49-83ddd71c645b, --extension-process --enable-distillability-service --origin-trial-public-key=bYUKPJoPnCxeNvu72j4EmPuK7tr1PAC7SHh8ld9Mw3E=,fMS4mpO6buLQ/QMd+zJmxzty/VQ6B1EUZqoCU04zoRU= --change-stack-guard-on-fork=enable --lang=en-US --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=10 --time-ticks-at-unix-epoch=-1755112453925711 --launch-time-ticks=5037968642 --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,5088241369629786152,14030317653483945799,262144 --variations-seed-version=main@9f26eba51a9178270588b40fe6c0c45f77ab1806
+
+--- ps aux --sort=-%cpu | head -n 10 ---
+USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+root      1874  2.7  0.7 839744 113792 tty7    Ssl+ 20:37   3:18 /usr/lib/xorg/Xorg -nolisten tcp -auth /var/run/slimski.auth vt07
+antiXus+ 21547  2.2  2.3 34353580 374212 ?     S<l  22:37   0:03 /opt/brave.com/brave/brave
+antiXus+ 21623  0.7  1.0 1459745644 163840 ?   S<l  22:37   0:01 /opt/brave.com/brave/brave --type=renderer --crashpad-handler-pid=21551 --enable-crash-reporter=19833498-0035-43ea-9a49-83ddd71c645b, --enable-distillability-service --origin-trial-public-key=bYUKPJoPnCxeNvu72j4EmPuK7tr1PAC7SHh8ld9Mw3E=,fMS4mpO6buLQ/QMd+zJmxzty/VQ6B1EUZqoCU04zoRU= --change-stack-guard-on-fork=enable --lang=en-US --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=5 --time-ticks-at-unix-epoch=-1755112453925711 --launch-time-ticks=4974686508 --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,5088241369629786152,14030317653483945799,262144 --variations-seed-version=main@9f26eba51a9178270588b40fe6c0c45f77ab1806
+antiXus+  2486  0.7  0.0 105008 15384 ?        S<l  20:37   0:54 pipewire
+antiXus+ 21585  0.6  1.1 34409740 183644 ?     S<l  22:37   0:00 /opt/brave.com/brave/brave --type=gpu-process --crashpad-handler-pid=21551 --enable-crash-reporter=19833498-0035-43ea-9a49-83ddd71c645b, --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAAAEAAAAAAAAAAAAAAAAAABgAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABAAAAAAAAAAEAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --shared-files --field-trial-handle=3,i,5088241369629786152,14030317653483945799,262144 --variations-seed-version=main@9f26eba51a9178270588b40fe6c0c45f77ab1806
+antiXus+ 21892  0.6  0.4 731120 77732 ?        Sl   22:38   0:00 /usr/bin/python3 /usr/bin/terminator
+antiXus+  2429  0.4  0.1 151236 21752 ?        Ss   20:37   0:35 /usr/bin/icewm --notify
+antiXus+ 21926  0.4  0.0  85544 12496 pts/1    Ss   22:38   0:00 /usr/bin/bash
+antiXus+  2528  0.4  0.2 556800 37728 ?        S<l  20:37   0:29 wireplumber
+
+
+--- Individual Metric Scores ---
+CPU Idle Score: "48.00"
+CPU Load Score: "48.00"
+Memory Free Score: "48.00"
+Swap Used Score: "48.00"
+Disk Utilization Score: "48.00"
+Network Latency Score: "48.00"
+Network Packet Loss Score: "48.00"
+
+Overall Performance Score: "48.00" / 10.0
+Script finished at Wed Aug 13 10:39:57 PM CEST 2025

@@ -1,0 +1,58 @@
+Local LLM Optimization Diagnostic Report
+Generated: Sun Jun 15 10:46:13 PM CEST 2025
+========================================
+
+[ HARDWARE INFORMATION ]
+
+# CPU DETAILS
+On-line CPU(s) list:                  0-3
+Model name:                           Intel(R) Core(TM) i5-7200U CPU @ 2.50GHz
+BIOS Model name:                      Intel(R) Core(TM) i5-7200U CPU @ 2.50GHz None CPU @ 3.1GHz
+Thread(s) per core:                   2
+Core(s) per socket:                   2
+Socket(s):                            1
+CPU(s) scaling MHz:                   100%
+CPU max MHz:                          3100.0000
+CPU min MHz:                          400.0000
+CPU FLAGS PRESENT: avx
+CPU FLAGS PRESENT: avx2
+CPU FLAGS PRESENT: fma
+CPU FLAGS PRESENT: sse4_2
+
+# MEMORY CONFIGURATION
+Total RAM: 15Gi | Available: 13Gi
+	Error Correction Type: None
+	Size: 8 GB
+	Type: DDR4
+	Speed: 2133 MT/s
+	Configured Memory Speed: 2133 MT/s
+	Size: No Module Installed
+
+# GPU CONFIGURATION
+No dedicated GPU detected - Using CPU mode
+
+# STORAGE PERFORMANCE
+Filesystem     Type  Size Avail Use%
+/dev/sda7      ext4   20G   12G  37%
+
+# DISK SPEED (Sequential Read - 1GB Test)
+Install 'fio' for precise disk benchmarks
+
+[ SOFTWARE ENVIRONMENT ]
+
+# ACCELERATION LIBRARIES
+
+# PYTHON ENVIRONMENT
+Python 3.11.2 (main, Apr 28 2025, 14:11:48) [GCC 12.2.0]
+
+# CONTAINER SUPPORT
+Docker not installed
+
+# SYSTEM VERSION
+Kernel: 6.1.105-antix.1-amd64-smp
+Debian GNU/Linux 12 (bookworm)
+
+# RELEVANT ENV VARIABLES
+
+[ PERFORMANCE RECOMMENDATIONS ]
+- Consider CPU quantization (q4_0, q5_K_M)

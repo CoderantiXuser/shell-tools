@@ -1,0 +1,2 @@
+@reboot  './home/antiXuser/my_scripts/mystartup.sh'
+

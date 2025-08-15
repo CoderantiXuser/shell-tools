@@ -1,0 +1,550 @@
+#!/bin/bash
+
+# Declare the global associative array for storing results
+declare -A NETWORK_ANALYSIS_DATA
+
+# --- Color Definitions ---
+C_RESET='\033[0m'
+C_BOLD='\033[1m'
+C_DIM='\033[2m'
+C_ITALIC='\033[3m'
+C_UNDERLINE='\033[4m'
+
+C_RED='\033[0;31m'
+C_GREEN='\033[0;32m'
+C_YELLOW='\033[0;33m'
+C_BLUE='\033[0;34m'
+C_MAGENTA='\033[0;35m'
+C_CYAN='\033[0;36m'
+C_LIGHT_GRAY='\033[0;37m'
+
+C_LIGHT_RED='\033[1;31m'
+C_LIGHT_GREEN='\033[1;32m'
+C_LIGHT_YELLOW='\033[1;33m'
+C_LIGHT_BLUE='\033[1;34m'
+C_LIGHT_MAGENTA='\033[1;35m'
+C_LIGHT_CYAN='\033[1;36m'
+C_WHITE='\033[1;37m'
+
+# Semantic colors
+HEADER_COLOR="${C_BOLD}${C_LIGHT_BLUE}"
+SUB_HEADER_COLOR="${C_BOLD}${C_BLUE}"
+SECTION_TITLE_COLOR="${C_BOLD}${C_MAGENTA}"
+INFO_COLOR="${C_GREEN}"
+ACTION_INFO_COLOR="${C_LIGHT_GREEN}"
+WARNING_COLOR="${C_YELLOW}"
+ERROR_COLOR="${C_RED}"
+COMMAND_COLOR="${C_LIGHT_CYAN}"
+DATA_LABEL_COLOR="${C_BOLD}${C_WHITE}"
+VALUE_COLOR="" # Default terminal color for values
+IMPORTANT_VALUE_COLOR="${C_BOLD}${C_LIGHT_YELLOW}"
+NOTE_COLOR="${C_DIM}"
+
+# --- Helper Functions for Output and Data Storage ---
+_print_main_header() { echo -e "\n${HEADER_COLOR}════════════════════════════════════════════════════════════════════════════════${C_RESET}"; echo -e "${HEADER_COLOR}║ ${C_BOLD}${C_WHITE}$1${HEADER_COLOR} ║${C_RESET}"; echo -e "${HEADER_COLOR}════════════════════════════════════════════════════════════════════════════════${C_RESET}\n"; }
+_print_section_header() { echo -e "\n${SUB_HEADER_COLOR}▶ $1 ${C_RESET}"; }
+_print_subsection_title() { echo -e "  ${SECTION_TITLE_COLOR}↳ $1${C_RESET}"; }
+
+_print_info() { echo -e "  ${INFO_COLOR}ℹ INFO: ${C_RESET}$1"; }
+_print_action_info() { echo -e "  ${ACTION_INFO_COLOR}✓ ACTION: ${C_RESET}$1";}
+_print_warn() { echo -e "  ${WARNING_COLOR}⚠ WARN: ${C_RESET}$1"; }
+_print_err() { echo -e "  ${ERROR_COLOR}✗ ERROR: ${C_RESET}$1"; }
+_print_cmd_suggestion() { echo -e "    ${COMMAND_COLOR}  \$ ${C_ITALIC}$1${C_RESET}"; }
+_print_note() { echo -e "    ${NOTE_COLOR}Note: $1${C_RESET}"; }
+
+_store_data() {
+    NETWORK_ANALYSIS_DATA["$1"]="$2"
+}
+
+_print_and_store_data() {
+    local key="$1"
+    local label="$2"
+    local value="$3"
+    local is_multiline=false
+    [[ "$value" == *$'\n'* ]] && is_multiline=true
+
+    _store_data "$key" "$value"
+
+    if [[ "$is_multiline" == true ]]; then
+        echo -e "    ${DATA_LABEL_COLOR}${label}:${C_RESET}\n${VALUE_COLOR}$(echo "$value" | sed 's/^/      /') ${C_RESET}"
+    else
+        if [[ -z "$value" ]]; then
+            echo -e "    ${DATA_LABEL_COLOR}${label}:${C_RESET} ${NOTE_COLOR}(empty/not found)${C_RESET}"
+        else
+            echo -e "    ${DATA_LABEL_COLOR}${label}:${C_RESET} ${VALUE_COLOR}${value}${C_RESET}"
+        fi
+    fi
+}
+
+_run_and_store_cmd_output() {
+    local key="$1"
+    local label="$2"
+    local cmd_to_run="$3"
+    local result
+    echo -e "    ${NOTE_COLOR}Executing: ${cmd_to_run}${C_RESET}"
+    # shellcheck disable=SC2001 # a bit complex for shellcheck without changing logic dramatically
+    result=$(eval "$cmd_to_run" 2>&1 | sed 's/\x1b\[[0-9;]*m//g') # Evaluate and strip ANSI codes from command output
+    # If command fails (non-zero exit code) and produced no output, set a generic failure message
+    # Otherwise, use its output (stderr or stdout).
+    if [[ $? -ne 0 && -z "$result" ]]; then
+        result="Command failed or produced no output."
+    elif [[ -z "$result" ]]; then
+        result="(no output)"
+    fi
+    _print_and_store_data "$key" "$label" "$result"
+}
+
+analyze_network_manager_deep_dive() {
+    # --- Function Configuration & Pre-flight Checks ---
+    local target_interface_arg="$1"
+    local focused_manager_arg="$2" # Optional: NetworkManager, systemd-networkd, wicd
+    local timestamp
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S %Z")
+    NETWORK_ANALYSIS_DATA=() # Clear previous results
+    
+    _print_main_header "Deep Network System Analysis started at $timestamp"
+    _store_data "analysis_timestamp" "$timestamp"
+    _store_data "script_version" "1.1"
+    _store_data "function_call_args" "Interface: '${target_interface_arg:-auto}', Focused Manager: '${focused_manager_arg:-auto}'"
+
+
+    _print_section_header "[0] Pre-flight System Checks"
+    if [[ $EUID -ne 0 ]]; then
+        _print_err "This script must be run as root (or with sudo) for full system access."
+        _store_data "error_permission_denied" "Script not run as root."
+        return 1
+    else
+        _print_info "Running with root privileges."
+    fi
+
+    local tools_required=(
+        "systemctl" "ps" "ip" "ls" "cat" "nmcli" "networkctl" "journalctl"
+        "dmesg" "strace" "tcpdump" "dig" "iwconfig" "iw" "dbus-monitor" "pgrep"
+        "readlink" "resolvectl" "lsof"
+    )
+    local missing_tools=()
+    for tool in "${tools_required[@]}"; do
+        if ! command -v "$tool" &> /dev/null; then
+            missing_tools+=("$tool")
+        fi
+    done
+    if [[ ${#missing_tools[@]} -gt 0 ]]; then
+        _print_warn "Missing recommended tools: ${C_BOLD}${missing_tools[*]}${C_RESET}. Some analysis might be incomplete."
+        _store_data "warnings_missing_tools" "${missing_tools[*]}"
+    else
+        _print_info "All recommended tools are present."
+    fi
+
+    local target_interface="$target_interface_arg"
+    if [[ -z "$target_interface" ]]; then
+        target_interface=$(ip route | grep '^default' | awk '{print $5}' | head -n1)
+        if [[ -z "$target_interface" ]]; then
+            target_interface=$(ip -o link show | awk -F': ' '$2 != "lo" && /state UP/ {print $2}' | head -n1)
+        fi
+        if [[ -z "$target_interface" ]]; then
+            _print_warn "Could not auto-detect an active primary network interface. Analysis will proceed globally."
+            _store_data "warnings_interface_detection" "Failed to auto-detect active primary interface."
+        else
+            _print_info "Auto-detected target interface for specific checks: ${IMPORTANT_VALUE_COLOR}$target_interface${C_RESET}"
+            _store_data "detected_target_interface" "$target_interface"
+        fi
+    else
+        if ! ip link show "$target_interface" &>/dev/null; then
+             _print_warn "Specified interface '${C_BOLD}$target_interface${C_RESET}' does not seem to exist. Some interface-specific tests may fail."
+             _store_data "warnings_interface_validation" "Specified interface '$target_interface' not found."
+        else
+            _print_info "Using specified target interface for specific checks: ${IMPORTANT_VALUE_COLOR}$target_interface${C_RESET}"
+        fi
+    fi
+    local interface_for_keys="${target_interface//[^a-zA-Z0-9_]/_}" # Sanitize for map keys
+
+
+    # --- 1. Identify Active Network Management Software & Key Processes ---
+    _print_section_header "[1] Network Management Software Identification"
+    local known_managers=("NetworkManager" "systemd-networkd" "wicd" "connman")
+    local detected_running_managers=()
+    
+    _print_subsection_title "Systemd Services Scan"
+    for mgr_svc in "${known_managers[@]}"; do
+        local svc_name="${mgr_svc}.service" # connman may also be connmand.service
+        if [[ "$mgr_svc" == "systemd-networkd" ]]; then svc_name="systemd-networkd.service"; fi # ensure exact name
+        if systemctl is-active "$svc_name" &>/dev/null; then
+            _print_info "Service ${C_BOLD}$svc_name${C_RESET} is ${ACTION_INFO_COLOR}active${C_RESET}."
+            detected_running_managers+=("$mgr_svc")
+            _store_data "service_status_${mgr_svc}" "active"
+            _run_and_store_cmd_output "service_details_${mgr_svc}" "$mgr_svc Service Main PID(s)" "systemctl show -p MainPID $svc_name | cut -d'=' -f2"
+        else
+            _print_info "Service ${C_BOLD}$svc_name${C_RESET} is ${NOTE_COLOR}inactive or not found${C_RESET}."
+            _store_data "service_status_${mgr_svc}" "inactive/not found"
+        fi
+    done
+    if [[ ${#detected_running_managers[@]} -eq 0 ]]; then
+        _print_warn "No common network manager services (NetworkManager, systemd-networkd, wicd, connman) found active."
+    else
+         _print_info "Detected running manager(s): ${IMPORTANT_VALUE_COLOR}${detected_running_managers[*]}${C_RESET}"
+    fi
+    _store_data "identification_detected_running_managers" "${detected_running_managers[*]}"
+
+
+    _print_subsection_title "Relevant Processes Scan"
+    local relevant_procs_pattern='NetworkManager|wpa_supplicant|dhclient|dhcpcd|systemd-networkd|connman|wicd|dnsmasq|named|unbound'
+    _run_and_store_cmd_output "identification_relevant_processes" "Processes matching (${relevant_procs_pattern})" \
+        "ps aux | grep -E '${relevant_procs_pattern}' | grep -v 'grep E --color=auto'"
+
+    _print_subsection_title "Determining Analysis Focus"
+    local primary_focus_manager="$focused_manager_arg"
+    if [[ -z "$primary_focus_manager" ]]; then
+        if [[ " ${detected_running_managers[*]} " =~ " NetworkManager " ]]; then
+            primary_focus_manager="NetworkManager"
+        elif [[ " ${detected_running_managers[*]} " =~ " systemd-networkd " ]]; then
+            primary_focus_manager="systemd-networkd"
+        elif [[ ${#detected_running_managers[@]} -gt 0 ]]; then
+            primary_focus_manager="${detected_running_managers[0]}" # First detected
+        else
+            primary_focus_manager="none" # No clear manager running
+        fi
+        _print_info "Auto-determining primary focus for detailed checks to: ${IMPORTANT_VALUE_COLOR}${primary_focus_manager}${C_RESET}"
+    else
+        _print_info "Manual focus for detailed checks set to: ${IMPORTANT_VALUE_COLOR}${primary_focus_manager}${C_RESET}"
+        if ! [[ " ${detected_running_managers[*]} " =~ " $primary_focus_manager " ]] && \
+           ! [[ "$primary_focus_manager" == "none" ]]; then
+             _print_warn "Focused manager '${C_BOLD}$primary_focus_manager${C_RESET}' does not appear to be an active service."
+        fi
+    fi
+    _store_data "analysis_primary_focus_manager" "$primary_focus_manager"
+
+    # --- 2. Trace Interface Ownership ---
+    if [[ -n "$target_interface" ]]; then
+        _print_section_header "[2] Interface Ownership Analysis for: ${C_BOLD}${target_interface}${C_RESET}"
+        if command -v nmcli &> /dev/null && ([[ " ${detected_running_managers[*]} " =~ " NetworkManager " ]] || [[ "$primary_focus_manager" == "NetworkManager" ]]); then
+            _run_and_store_cmd_output "ownership_${interface_for_keys}_nmcli_device_show" "nmcli dev show $target_interface" "nmcli device show \"$target_interface\""
+        fi
+        if command -v networkctl &> /dev/null && ([[ " ${detected_running_managers[*]} " =~ " systemd-networkd " ]] || [[ "$primary_focus_manager" == "systemd-networkd" ]]); then
+             _run_and_store_cmd_output "ownership_${interface_for_keys}_networkctl_status" "networkctl status $target_interface" "networkctl status \"$target_interface\""
+        fi
+        _run_and_store_cmd_output "ownership_${interface_for_keys}_ip_link_show" "ip link show $target_interface" "ip link show \"$target_interface\""
+        local driver_path="/sys/class/net/${target_interface}/device/driver"
+        if [[ -L "$driver_path" ]]; then # Driver is a symlink to the actual driver module dir
+             _run_and_store_cmd_output "ownership_${interface_for_keys}_driver" "Kernel Driver (basename)" "basename \$(readlink -f \"$driver_path\")"
+        elif [[ -e "$driver_path" ]]; then # Non-symlink, might be more complex (e.g. virtual dev)
+             _print_and_store_data "ownership_${interface_for_keys}_driver" "Kernel Driver Path" "Exists ($driver_path), not a direct symlink."
+        else
+             _print_and_store_data "ownership_${interface_for_keys}_driver" "Kernel Driver" "Driver path not found."
+        fi
+    else
+        _print_info "Skipping interface-specific ownership trace (no specific target interface determined)."
+    fi
+
+    # --- 3. Analyze Configuration Workflow & Key Files ---
+    _print_section_header "[3] Configuration Workflow Analysis"
+    for manager_name in "${known_managers[@]}"; do
+        if [[ "$manager_name" == "NetworkManager" ]] && ([[ " ${detected_running_managers[*]} " =~ " NetworkManager " ]] || [[ "$primary_focus_manager" == "NetworkManager" ]]); then
+            _print_subsection_title "NetworkManager Configuration"
+            _print_and_store_data "config_NM_path_system_connections" "System Connections Dir" "/etc/NetworkManager/system-connections/"
+            _run_and_store_cmd_output "config_NM_list_system_connections" "System Connections Files" "ls -1 /etc/NetworkManager/system-connections/ 2>/dev/null"
+            _run_and_store_cmd_output "config_NM_conf_content" "NetworkManager.conf" "cat /etc/NetworkManager/NetworkManager.conf 2>/dev/null"
+            _print_note "NM uses wpa_supplicant for Wi-Fi, dhclient/dhcpcd (or internal) for DHCP, can manage /etc/resolv.conf or use systemd-resolved."
+        fi
+        if [[ "$manager_name" == "systemd-networkd" ]] && ([[ " ${detected_running_managers[*]} " =~ " systemd-networkd " ]] || [[ "$primary_focus_manager" == "systemd-networkd" ]]); then
+            _print_subsection_title "systemd-networkd Configuration"
+             _print_and_store_data "config_SN_path_network_files" "Network Config Dir" "/etc/systemd/network/"
+            if compgen -G "/etc/systemd/network/*.network" > /dev/null; then
+                local sn_files_content=""
+                for conf_file in /etc/systemd/network/*.network; do
+                    sn_files_content+="\n--- ${C_BOLD}${conf_file}${C_RESET} ---\n$(cat "$conf_file" 2>/dev/null)\n"
+                done
+                 _print_and_store_data "config_SN_network_files_content" ".network Files Content" "$sn_files_content"
+            else
+                 _print_and_store_data "config_SN_network_files_content" ".network Files Content" "No .network files found in /etc/systemd/network/."
+            fi
+            _run_and_store_cmd_output "config_SN_resolved_conf_content" "resolved.conf" "cat /etc/systemd/resolved.conf 2>/dev/null"
+            _print_note "systemd-networkd directly configures kernel via netlink, integrates with systemd-resolved for DNS."
+        fi
+        if [[ "$manager_name" == "wicd" ]] && ([[ " ${detected_running_managers[*]} " =~ " wicd " ]] || [[ "$primary_focus_manager" == "wicd" ]]); then
+            _print_subsection_title "Wicd Configuration"
+            _print_and_store_data "config_wicd_path_main" "Wicd Config Dir" "/etc/wicd/"
+            _run_and_store_cmd_output "config_wicd_manager_settings" "manager-settings.conf" "cat /etc/wicd/manager-settings.conf 2>/dev/null"
+            # Add other wicd specific files as needed
+            _print_note "Wicd stores configs in /etc/wicd/."
+        fi
+        # Add ConnMan config if needed in future
+    done
+
+    local legacy_interfaces_file="/etc/network/interfaces"
+    if [[ -f "$legacy_interfaces_file" ]]; then
+        _print_subsection_title "Legacy /etc/network/interfaces"
+        _run_and_store_cmd_output "config_legacy_interfaces_content" "$legacy_interfaces_file Content" "cat \"$legacy_interfaces_file\" 2>/dev/null"
+        _print_note "This file is used by older 'ifupdown' tools. Its relevance depends on other active managers."
+    fi
+    
+    _print_subsection_title "DNS Resolver (/etc/resolv.conf) Analysis"
+    local resolv_conf_path="/etc/resolv.conf"
+    _run_and_store_cmd_output "dns_resolv_conf_content" "Contents of $resolv_conf_path" "cat \"$resolv_conf_path\""
+    if [[ -L "$resolv_conf_path" ]]; then
+        local rlink
+        rlink=$(readlink -f "$resolv_conf_path")
+        _print_and_store_data "dns_resolv_conf_symlink_target" "$resolv_conf_path is symlinked to" "$rlink"
+        if command -v dpkg &>/dev/null; then
+            _run_and_store_cmd_output "dns_resolv_conf_symlink_owner_pkg_dpkg" "Symlink Target Owner (dpkg)" "dpkg -S \"$rlink\" 2>/dev/null | awk -F': ' '{print \$1}'"
+        elif command -v rpm &>/dev/null; then
+            _run_and_store_cmd_output "dns_resolv_conf_symlink_owner_pkg_rpm" "Symlink Target Owner (rpm)" "rpm -qf \"$rlink\" 2>/dev/null"
+        fi
+    else
+        _print_and_store_data "dns_resolv_conf_is_symlink" "$resolv_conf_path is not a symlink" "No"
+        if command -v lsof &>/dev/null; then
+             _run_and_store_cmd_output "dns_resolv_conf_lsof" "Processes with $resolv_conf_path open (lsof)" "lsof -t \"$resolv_conf_path\" | xargs -r ps -o pid,comm -p"
+        else
+            _print_warn "lsof command not found, cannot check which processes have /etc/resolv.conf open if it's not a symlink."
+        fi
+    fi
+
+    if systemctl is-active systemd-resolved &>/dev/null; then
+        _print_info "systemd-resolved service is ${ACTION_INFO_COLOR}active${C_RESET}."
+        _store_data "dns_systemd_resolved_status_service" "active"
+        if command -v resolvectl &>/dev/null; then
+            _run_and_store_cmd_output "dns_resolvectl_status_output" "resolvectl status" "resolvectl status"
+        else
+            _print_warn "resolvectl command not found, cannot get detailed systemd-resolved status via resolvectl."
+        fi
+    else
+        _print_info "systemd-resolved service is ${NOTE_COLOR}inactive or not found${C_RESET}."
+        _store_data "dns_systemd_resolved_status_service" "inactive/not found"
+    fi
+
+    _print_subsection_title "DHCP Client Process Check"
+    local dhcp_clients_check=("dhclient" "dhcpcd" "udhcpc")
+    local running_dhcp_clients_info=""
+    local found_dhcp_client=false
+    for client in "${dhcp_clients_check[@]}"; do
+        if pgrep -x "$client" &>/dev/null; then
+            local pids
+            pids=$(pgrep -d, -x "$client")
+            _print_info "DHCP client ${C_BOLD}$client${C_RESET} is ${ACTION_INFO_COLOR}running${C_RESET} (PIDs: $pids)."
+            running_dhcp_clients_info+="$client (PIDs: $pids)\n"
+            found_dhcp_client=true
+        fi
+    done
+    if ! $found_dhcp_client; then
+        _print_info "No common DHCP clients (dhclient, dhcpcd, udhcpc) found actively running."
+        running_dhcp_clients_info="No common DHCP clients found running."
+    fi
+    _store_data "processes_running_dhcp_clients_details" "$(echo -e "$running_dhcp_clients_info" | sed '/^$/d')" # Store non-empty
+
+
+    # --- 4. Monitor Runtime Behavior (Recent Data & Commands for manual execution) ---
+    _print_section_header "[4] Runtime Behavior Monitoring"
+    _print_subsection_title "Recent Logs"
+    for manager_name in "${detected_running_managers[@]}"; do
+        if [[ "$manager_name" == "NetworkManager" ]]; then
+             _run_and_store_cmd_output "logs_NetworkManager_recent" "NetworkManager Logs (last 50 lines)" "journalctl -u NetworkManager --no-pager -n 50 --since '1 hour ago'"
+        fi
+        if [[ "$manager_name" == "systemd-networkd" ]]; then
+             _run_and_store_cmd_output "logs_systemd_networkd_recent" "systemd-networkd Logs (last 50 lines)" "journalctl -u systemd-networkd --no-pager -n 50 --since '1 hour ago'"
+        fi
+        if [[ "$manager_name" == "wicd" ]]; then
+            # Wicd might log to journal or /var/log/wicd/wicd.log
+             _run_and_store_cmd_output "logs_wicd_journal_recent" "Wicd Journal Logs (last 50 lines)" "journalctl -u wicd --no-pager -n 50 --since '1 hour ago'"
+            _print_note "Also check /var/log/wicd/wicd.log for Wicd logs."
+        fi
+    done
+    if command -v dmesg &>/dev/null; then
+        _run_and_store_cmd_output "logs_kernel_dmesg_recent" "Kernel Logs (dmesg, recent network related)" "dmesg -T | grep -Ei 'net|eth|wlan|${target_interface:-xxxx}' | tail -n 30"
+    fi
+    _print_note "For live log following, use e.g.: journalctl -f -u NetworkManager"
+
+    _print_subsection_title "Process Tracing (Suggestions)"
+    for manager_name in "${detected_running_managers[@]}"; do
+        local pids
+        pids=$(pgrep "$manager_name")
+        if [[ -n "$pids" ]]; then
+            _print_info "${C_BOLD}$manager_name${C_RESET} PIDs: ${IMPORTANT_VALUE_COLOR}$pids${C_RESET}"
+            _store_data "pids_${manager_name}" "$pids"
+            _print_cmd_suggestion "sudo strace -p \$(pgrep ${manager_name} | head -n1) -e network,ioctl,openat,write -f -tt"
+        fi
+    done
+    _print_note "Use strace on specific PIDs for deep syscall analysis."
+
+    _print_subsection_title "Network Traffic Capture (Suggestions)"
+    if [[ -n "$target_interface" ]]; then
+        _print_info "Commands to capture traffic on ${C_BOLD}${target_interface}${C_RESET}:"
+        _print_cmd_suggestion "sudo tcpdump -i $target_interface -envv port 67 or port 68 # DHCP"
+        _print_cmd_suggestion "sudo tcpdump -i $target_interface -w ${interface_for_keys}_capture.pcap # Full capture"
+        _store_data "cmd_suggest_tcpdump_dhcp_${interface_for_keys}" "sudo tcpdump -i $target_interface -envv port 67 or port 68"
+        _store_data "cmd_suggest_tcpdump_full_${interface_for_keys}" "sudo tcpdump -i $target_interface -w ${interface_for_keys}_capture.pcap"
+    else
+        _print_warn "Target interface not determined, cannot provide specific tcpdump commands."
+    fi
+
+    _print_subsection_title "Kernel Network Event Monitoring (Suggestion)"
+    _print_cmd_suggestion "sudo ip monitor all"
+    _store_data "cmd_suggest_ip_monitor" "sudo ip monitor all"
+
+
+    # --- 5. Test for Conflicts (Suggest Commands, DO NOT EXECUTE) ---
+    _print_section_header "[5] Conflict & Override Testing (Manual Commands)"
+    _print_warn "The following are ${C_BOLD}suggestions for manual testing${C_RESET}. This script ${C_BOLD}DOES NOT EXECUTE${C_RESET} them."
+    _store_data "conflict_test_note" "Commands listed in this section are for manual execution by the user."
+
+    _print_subsection_title "A. Disable Competing Managers"
+    _print_cmd_suggestion "sudo systemctl stop NetworkManager; sudo systemctl disable NetworkManager"
+    _print_cmd_suggestion "sudo systemctl stop systemd-networkd; sudo systemctl disable systemd-networkd"
+    _print_cmd_suggestion "sudo systemctl enable <desired_manager>; sudo systemctl start <desired_manager>"
+    if [[ -n "$target_interface" ]]; then
+        _print_cmd_suggestion "ip addr show $target_interface ; ip route show dev $target_interface # Then check if interface comes up"
+        _store_data "conflict_test_cmd_check_interface_status" "ip addr show $target_interface ; ip route show dev $target_interface"
+    fi
+
+    _print_subsection_title "B. Compare Manual vs. Manager Control"
+    if [[ -n "$target_interface" ]]; then
+        _print_info "1. Note current IP, routes, DNS when manager handles ${C_BOLD}${target_interface}${C_RESET}."
+        _run_and_store_cmd_output "conflict_test_current_ip_addr_${interface_for_keys}" "Current IP ($target_interface)" "ip addr show \"$target_interface\""
+        _run_and_store_cmd_output "conflict_test_current_route_${interface_for_keys}" "Current Routes ($target_interface)" "ip route show dev \"$target_interface\""
+        _run_and_store_cmd_output "conflict_test_current_dns_resolv_conf" "Current DNS (/etc/resolv.conf)" "cat /etc/resolv.conf"
+        _print_info "2. Suggestion for manual configuration on ${C_BOLD}${target_interface}${C_RESET}:"
+        local example_manual_ip="192.168.1.200/24" ; local example_manual_gw="192.168.1.1"
+        _print_cmd_suggestion "sudo ip link set $target_interface down"
+        _print_cmd_suggestion "sudo ip addr flush dev $target_interface"
+        _print_cmd_suggestion "sudo ip addr add $example_manual_ip dev $target_interface"
+        _print_cmd_suggestion "sudo ip link set $target_interface up"
+        _print_cmd_suggestion "sudo ip route add default via $example_manual_gw dev $target_interface"
+        _print_cmd_suggestion "echo 'nameserver 8.8.8.8' | sudo tee /etc/resolv.conf # Temporarily override DNS"
+        _print_note "Observe if the active manager overwrites these manual settings after a short period or reboot."
+        _store_data "conflict_test_cmd_manual_config_${interface_for_keys}" "sudo ip addr add $example_manual_ip dev $target_interface; sudo ip link set $target_interface up; sudo ip route add default via $example_manual_gw dev $target_interface"
+    else
+        _print_warn "Target interface not determined, cannot provide specific manual config commands."
+    fi
+
+
+    # --- 6. Key Metrics to Investigate (Data Points & Commands) ---
+    _print_section_header "[6] Key Metrics Investigation"
+    if [[ -n "$target_interface" ]]; then
+        if command -v nmcli &>/dev/null && ([[ " ${detected_running_managers[*]} " =~ " NetworkManager " ]] || [[ "$primary_focus_manager" == "NetworkManager" ]]); then
+             _print_info "Interface Bring-up Time (NetworkManager) for ${C_BOLD}${target_interface}${C_RESET}:"
+             _print_cmd_suggestion "time nmcli device disconnect $target_interface ; time nmcli device connect $target_interface"
+             _store_data "metrics_cmd_nmcli_connect_time_${interface_for_keys}" "time nmcli device disconnect $target_interface ; time nmcli device connect $target_interface"
+        fi
+    fi
+
+    _print_subsection_title "DHCP Lease Stability"
+    local dhclient_leases="/var/lib/dhcp/dhclient.leases"
+    local dhclient6_leases="/var/lib/dhcp/dhclient6.leases"
+    local dhcpcd_leases_dir="/var/lib/dhcpcd/" # per-interface files like dhcpcd-${interface}.lease
+    _print_and_store_data "metrics_path_dhclient_leases" "dhclient (IPv4) leases file" "$dhclient_leases"
+    if [[ -f "$dhclient_leases" ]]; then
+        _run_and_store_cmd_output "metrics_dhclient_leases_tail" "Tail of $dhclient_leases" "tail -n 20 \"$dhclient_leases\""
+    fi
+    _print_and_store_data "metrics_path_dhclient6_leases" "dhclient (IPv6) leases file" "$dhclient6_leases"
+    if [[ -f "$dhclient6_leases" ]]; then
+        _run_and_store_cmd_output "metrics_dhclient6_leases_tail" "Tail of $dhclient6_leases" "tail -n 20 \"$dhclient6_leases\""
+    fi
+    _print_and_store_data "metrics_path_dhcpcd_leases_dir" "dhcpcd leases directory" "$dhcpcd_leases_dir"
+    if [[ -d "$dhcpcd_leases_dir" ]] && [[ -n "$target_interface" ]]; then
+        local dhcpcd_if_lease="${dhcpcd_leases_dir}dhcpcd-${target_interface}.lease"
+        _print_and_store_data "metrics_path_dhcpcd_lease_${interface_for_keys}" "dhcpcd lease for $target_interface" "$dhcpcd_if_lease (if exists)"
+        if [[ -f "$dhcpcd_if_lease" ]]; then
+            _run_and_store_cmd_output "metrics_dhcpcd_lease_content_${interface_for_keys}" "Content of $dhcpcd_if_lease" "cat \"$dhcpcd_if_lease\""
+        fi
+    fi
+
+    _print_subsection_title "DNS Resolution"
+    local dns_test_domain="example.com"
+    if command -v dig &>/dev/null; then
+        _run_and_store_cmd_output "metrics_dns_dig_system_resolver" "dig $dns_test_domain (using system resolver)" "dig $dns_test_domain A +short"
+        _run_and_store_cmd_output "metrics_dns_dig_google_resolver" "dig $dns_test_domain @8.8.8.8 (vs Google DNS)" "dig $dns_test_domain @8.8.8.8 A +short"
+    else
+        _print_warn "dig command not found. DNS resolution tests with dig skipped."
+    fi
+    if command -v resolvectl &>/dev/null && systemctl is-active systemd-resolved &>/dev/null; then
+        _run_and_store_cmd_output "metrics_dns_resolvectl_query" "systemd-resolve $dns_test_domain" "resolvectl query $dns_test_domain"
+    fi
+
+    if [[ -n "$target_interface" ]] && [[ "$target_interface" == wlan* || "$target_interface" == ath* || "$target_interface" == ra* ]]; then
+        _print_subsection_title "Wireless Specific Metrics for ${C_BOLD}${target_interface}${C_RESET}"
+        if command -v iwconfig &>/dev/null; then
+            _run_and_store_cmd_output "metrics_wifi_iwconfig_output_${interface_for_keys}" "iwconfig $target_interface" "iwconfig \"$target_interface\""
+            _print_note "Check 'Signal level', 'Link Quality', 'Tx excessive retries' from iwconfig for roaming/stability."
+        else
+            _print_warn "iwconfig command not found. Some wireless metrics skipped."
+        fi
+        if command -v iw &>/dev/null; then
+            _run_and_store_cmd_output "metrics_wifi_iw_link_output_${interface_for_keys}" "iw dev $target_interface link" "iw dev \"$target_interface\" link"
+            _run_and_store_cmd_output "metrics_wifi_iw_power_save_${interface_for_keys}" "iw dev $target_interface get power_save" "iw dev \"$target_interface\" get power_save"
+        else
+            _print_warn "iw command not found. Advanced wireless metrics skipped."
+        fi
+    fi
+
+    # --- 7. Advanced: D-Bus Monitoring (NetworkManager) ---
+    _print_section_header "[7] Advanced: D-Bus Monitoring"
+    if ([[ " ${detected_running_managers[*]} " =~ " NetworkManager " ]] || [[ "$primary_focus_manager" == "NetworkManager" ]]); then
+        if command -v dbus-monitor &>/dev/null; then
+            _print_info "To monitor NetworkManager D-Bus events, run manually:"
+            _print_cmd_suggestion "dbus-monitor --system \"interface='org.freedesktop.NetworkManager'\""
+            _store_data "cmd_suggest_dbus_monitor_NM" "dbus-monitor --system \"interface='org.freedesktop.NetworkManager'\""
+        else
+            _print_warn "dbus-monitor command not found. D-Bus monitoring for NetworkManager not available."
+        fi
+    else
+        _print_info "D-Bus monitoring is most relevant for NetworkManager. Focused manager is not NetworkManager or NM is not active."
+    fi
+
+    # --- 8. Document Findings (Summary / Comparison Table Idea) ---
+    _print_section_header "[8] Summary & Documentation Aid"
+    _print_info "All collected data points have been stored in the ${C_BOLD}NETWORK_ANALYSIS_DATA${C_RESET} Bash associative array."
+    _print_info "Key influencing factors detected/investigated: ${IMPORTANT_VALUE_COLOR}${detected_running_managers[*]}${C_RESET}, /etc/resolv.conf handling, DHCP clients."
+    
+    local comparison_table_template="
+| Metric/Scenario        | NetworkManager | systemd-networkd | Manual/Other | Observations Key (${interface_for_keys:-GLOBAL}) |
+|------------------------|----------------|------------------|--------------|-------------------------------|
+| Interface Auto-Up      |                |                  | N/A          | ownership_${interface_for_keys:-global}_*        |
+| DHCP Client Used       |                |                  |              | processes_running_dhcp_clients_details |
+| /etc/resolv.conf Mgmt  |                |                  |              | dns_resolv_conf_*, dns_systemd_resolved_* |
+| Connection Time        |                |                  | N/A          | metrics_cmd_nmcli_connect_time_* |
+| Lease File Location    |                |                  |              | metrics_path_dhclient_*, metrics_path_dhcpcd_* |
+| Wi-Fi Roaming Heuristic| (Signal check) | (Kernel/Supp.)   | N/A          | metrics_wifi_iwconfig_output_* |
+| DNS Resolution Speed   | (Test w/ dig)  | (Test w/ dig)    | (Test w/ dig)| metrics_dns_dig_system_resolver |
+"
+    _print_info "Consider using a comparison table like the following to structure your findings (template stored in map):"
+    echo -e "${NOTE_COLOR}${comparison_table_template}${C_RESET}"
+    _store_data "documentation_comparison_table_template" "$comparison_table_template"
+
+    _print_main_header "Deep Network System Analysis Completed"
+}
+
+# --- Example Usage & Output (uncomment to run directly) ---
+#
+ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then # Check if script is being executed directly
+    if [[ $EUID -ne 0 ]]; then
+        echo -e "\033[1;31mERROR: This script must be run as root (or with sudo).\033[0m"
+        exit 1
+    fi
+
+    # === CHOOSE ONE WAY TO CALL THE FUNCTION ===
+    # 1. Fully automatic
+    # analyze_network_manager_deep_dive
+
+    # 2. Specify interface (e.g., wlan0), auto-focus manager
+    analyze_network_manager_deep_dive "wlan0"
+
+    # 3. Specify interface and focus on a specific manager (e.g., systemd-networkd)
+    # analyze_network_manager_deep_dive "eth0" "systemd-networkd"
+
+    # === OPTIONALLY: Print the collected data ===
+    echo -e "\n${C_BOLD}${C_LIGHT_MAGENTA}========================================================${C_RESET}"
+    echo -e "${C_BOLD}${C_LIGHT_MAGENTA}      Dumping Contents of NETWORK_ANALYSIS_DATA       ${C_RESET}"
+    echo -e "${C_BOLD}${C_LIGHT_MAGENTA}========================================================${C_RESET}"
+    
+    # Sort keys for more consistent output (requires Bash 4+)
+    # IFS=$'\n' sorted_keys=($(sort <<<"${!NETWORK_ANALYSIS_DATA[*]}"))
+    # unset IFS
+    # for key in "${sorted_keys[@]}"; do
+    for key in "${!NETWORK_ANALYSIS_DATA[@]}"; do # Original order for Bash < 4 compatibility
+        echo -e "\n${C_BOLD}${C_YELLOW}--- KEY: $key ---${C_RESET}"
+        if [[ "${NETWORK_ANALYSIS_DATA[$key]}" == *$'\n'* ]]; then
+            echo -e "${NETWORK_ANALYSIS_DATA[$key]}" # Print multiline as is
+        else
+            echo -e "VALUE: ${NETWORK_ANALYSIS_DATA[$key]}"
+        fi
+    done
+    echo -e "\n${C_BOLD}${C_LIGHT_MAGENTA}================ END OF DUMP =======================${C_RESET}"
+ fi
