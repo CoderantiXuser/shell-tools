@@ -28,13 +28,13 @@ USE_PAT=false # New global variable to indicate if PAT should be used for authen
 
 # --- Functions ---
 
-# Function to execute and log git commands
-run_git_command() {
+# Function to execute and log commands
+run_command() {
   if [ "$DRY_RUN" = true ]; then
-    echo -e "${COLOR_YELLOW}[DRY RUN] Would execute: git $*${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}[DRY RUN] Would execute: $*${COLOR_RESET}"
   else
-    echo -e "${COLOR_CYAN}▶ Executing: git $*${COLOR_RESET}"
-    git "$@"
+    echo -e "${COLOR_CYAN}▶ Executing: $*${COLOR_RESET}"
+    "$@"
   fi
 }
 
@@ -55,13 +55,13 @@ check_ssh_key_exists() {
     if pgrep -q "ssh-agent"; then
       echo -e "${COLOR_GREEN}✅ ssh-agent is running.${COLOR_RESET}"
       # Check if keys are added to ssh-agent
-      if ssh-add -l &> /dev/null; then
+      if run_command ssh-add -l &> /dev/null; then
         echo -e "${COLOR_GREEN}✅ SSH key loaded into ssh-agent.${COLOR_RESET}"
         return 0 # SSH key exists and is loaded
       else
         echo -e "${COLOR_YELLOW}⚠️ SSH key file found, but not loaded into ssh-agent. Attempting to add...${COLOR_RESET}"
-        ssh-add "$HOME/.ssh/id_rsa" 2>/dev/null || ssh-add "$HOME/.ssh/id_ed25519" 2>/dev/null
-        if ssh-add -l &> /dev/null; then
+        run_command ssh-add "$HOME/.ssh/id_rsa" 2>/dev/null || run_command ssh-add "$HOME/.ssh/id_ed25519" 2>/dev/null
+        if run_command ssh-add -l &> /dev/null; then
           echo -e "${COLOR_GREEN}✅ SSH key successfully added to ssh-agent.${COLOR_RESET}"
           return 0
         else
@@ -71,12 +71,12 @@ check_ssh_key_exists() {
       fi
     else
       echo -e "${COLOR_YELLOW}⚠️ ssh-agent is not running. Starting it...${COLOR_RESET}"
-      eval "$(ssh-agent -s)" > /dev/null
+      eval "$(run_command ssh-agent -s)" > /dev/null
       if pgrep -q "ssh-agent"; then
         echo -e "${COLOR_GREEN}✅ ssh-agent started.${COLOR_RESET}"
         echo -e "${COLOR_YELLOW}Attempting to add SSH key...${COLOR_RESET}"
-        ssh-add "$HOME/.ssh/id_rsa" 2>/dev/null || ssh-add "$HOME/.ssh/id_ed25519" 2>/dev/null
-        if ssh-add -l &> /dev/null; then
+        run_command ssh-add "$HOME/.ssh/id_rsa" 2>/dev/null || run_command ssh-add "$HOME/.ssh/id_ed25519" 2>/dev/null
+        if run_command ssh-add -l &> /dev/null; then
           echo -e "${COLOR_GREEN}✅ SSH key successfully added to ssh-agent.${COLOR_RESET}"
           return 0
         else
@@ -102,18 +102,26 @@ setup_ssh_key() {
   continue_or_exit
 
   echo -e "${COLOR_BLUE}1. Generating a new SSH key...${COLOR_RESET}"
-  echo -e "${COLOR_YELLOW}When prompted, you can press Enter to accept the default file location and passphrase (though a passphrase is recommended for security).${COLOR_RESET}"
+
+  local default_key_path="$HOME/.ssh/id_ed25519"
+  printf "${COLOR_CYAN}Enter the file path to save the key, or press Enter for the default:\n${COLOR_RESET}"
+  printf "${COLOR_YELLOW}Default: ${default_key_path}${COLOR_RESET}\n> "
+  read -r key_path
+  key_path=${key_path:-$default_key_path}
+
+  # Ensure the .ssh directory exists
+  mkdir -p "$(dirname "$key_path")"
+
+  echo -e "${COLOR_YELLOW}When prompted, you can press Enter for no passphrase (though a passphrase is recommended for security).${COLOR_RESET}"
   local user_email
-  user_email=$(run_git_command config user.email)
-  ssh-keygen -t ed25519 -C "$user_email"
-  if [ $? -ne 0 ]; then
-    error_exit "Failed to generate SSH key."
-  fi
+  user_email=$(run_command git config user.email)
+  run_command ssh-keygen -t ed25519 -f "$key_path" -C "$user_email"
+
   echo -e "${COLOR_GREEN}✅ SSH key generated.${COLOR_RESET}"
   continue_or_exit
 
   echo -e "${COLOR_BLUE}2. Starting the ssh-agent...${COLOR_RESET}"
-  eval "$(ssh-agent -s)" > /dev/null
+  eval "$(run_command ssh-agent -s)" > /dev/null
   if [ $? -ne 0 ]; then
     error_exit "Failed to start ssh-agent."
   fi
@@ -121,7 +129,7 @@ setup_ssh_key() {
   continue_or_exit
 
   echo -e "${COLOR_BLUE}3. Adding your SSH key to the ssh-agent...${COLOR_RESET}"
-  ssh-add "$HOME/.ssh/id_ed25519"
+  run_command ssh-add "$key_path"
   if [ $? -ne 0 ]; then
     error_exit "Failed to add SSH key to ssh-agent. You may need to provide a passphrase."
   fi
@@ -130,7 +138,7 @@ setup_ssh_key() {
 
   echo -e "${COLOR_BOLD}${COLOR_MAGENTA}--- IMPORTANT: Add your SSH Public Key to GitHub ---${COLOR_RESET}"
   echo -e "${COLOR_YELLOW}To use SSH for GitHub, you need to add your public key to your GitHub account.${COLOR_RESET}"
-  echo -e "${COLOR_YELLOW}Your public key is located at: ${COLOR_BOLD}$HOME/.ssh/id_ed25519.pub${COLOR_RESET}"
+  echo -e "${COLOR_YELLOW}Your public key is located at: ${COLOR_BOLD}${key_path}.pub${COLOR_RESET}"
   echo -e "${COLOR_YELLOW}Copy the content of this file and add it to your GitHub SSH keys settings.${COLOR_RESET}"
   echo -e "${COLOR_YELLOW}You can copy it using: ${COLOR_CYAN}cat ~/.ssh/id_ed25519.pub | xclip -selection clipboard${COLOR_RESET} (install xclip if needed)"
   echo -e "${COLOR_YELLOW}Or simply display it: ${COLOR_CYAN}cat ~/.ssh/id_ed25519.pub${COLOR_RESET}"
@@ -249,7 +257,7 @@ check_existing_repo() {
   fi
 
   echo -e "${COLOR_BLUE}Checking if this is already a Git repository...${COLOR_RESET}"
-  if run_git_command rev-parse --is-inside-work-tree &> /dev/null; then
+  if run_command git rev-parse --is-inside-work-tree &> /dev/null; then
     echo -e "${COLOR_YELLOW}⚠️ This directory is already a Git repository.${COLOR_RESET}"
     echo -e "${COLOR_YELLOW}What would you like to do?${COLOR_RESET}"
     echo -e "  ${COLOR_CYAN}1) Continue with the existing repository (add and push files).${COLOR_RESET}"
@@ -271,7 +279,7 @@ check_existing_repo() {
         read confirm_delete
         if [ "$confirm_delete" == "YES" ]; then
           echo -e "${COLOR_YELLOW}Deleting .git directory...${COLOR_RESET}"
-          rm -rf .git
+          run_command rm -rf .git
           echo -e "${COLOR_GREEN}✅ .git directory deleted. Proceeding with reinitialization.${COLOR_RESET}"
         else
           error_exit "Deletion cancelled. Exiting script."
@@ -311,7 +319,7 @@ initialize_git() {
   fi
 
   echo -e "${COLOR_BLUE}Initializing new Git repository...${COLOR_RESET}"
-  if ! run_git_command init; then
+  if ! run_command git init; then
     error_exit "Failed to initialize Git repository."
   fi
   echo -e "${COLOR_GREEN}✅ Git repository initialized.${COLOR_RESET}"
@@ -327,9 +335,9 @@ get_default_branch() {
   fi
 
   echo -e "${COLOR_BLUE}Determining default branch name...${COLOR_RESET}"
-  DEFAULT_BRANCH=$(run_git_command symbolic-ref --short HEAD 2>/dev/null || true)
+  DEFAULT_BRANCH=$(run_command git symbolic-ref --short HEAD 2>/dev/null || true)
   if [ -z "$DEFAULT_BRANCH" ]; then
-    if run_git_command branch -m main &> /dev/null; then
+    if run_command git branch -m main &> /dev/null; then
       DEFAULT_BRANCH="main"
     else
       DEFAULT_BRANCH="master"
@@ -355,7 +363,7 @@ add_files_to_staging() {
   fi
 
   echo -e "${COLOR_BLUE}Adding all files to the staging area...${COLOR_RESET}"
-  if ! run_git_command add .; then
+  if ! run_command git add .; then
     error_exit "Failed to add files to staging area."
   fi
   echo -e "${COLOR_GREEN}✅ All files added to staging area.${COLOR_RESET}"
@@ -387,7 +395,7 @@ make_initial_commit() {
   COMMIT_MESSAGE=${custom_commit_message:-$suggested_commit_message}
 
   echo -e "${COLOR_BLUE}Making the initial commit...${COLOR_RESET}"
-  if ! run_git_command commit -m "$COMMIT_MESSAGE"; then
+  if ! run_command git commit -m "$COMMIT_MESSAGE"; then
     error_exit "Failed to make the initial commit."
   fi
   echo -e "${COLOR_GREEN}✅ Initial commit created.${COLOR_RESET}"
@@ -408,13 +416,13 @@ prompt_for_remote_url() {
   fi
 
   # Try to automatically determine the remote URL if 'origin' already exists
-  EXISTING_REMOTE=$(run_git_command remote get-url origin 2>/dev/null || true)
+  EXISTING_REMOTE=$(run_command git remote get-url origin 2>/dev/null || true)
   if [ -n "$EXISTING_REMOTE" ]; then
     REMOTE_URL="$EXISTING_REMOTE"
     echo -e "${COLOR_GREEN}✅ Remote URL 'origin' already configured: ${COLOR_BOLD}$REMOTE_URL${COLOR_RESET}"
   else
     local github_user
-    github_user=$(run_git_command config github.user || run_git_command config user.name || echo "")
+    github_user=$(run_command git config github.user || run_command git config user.name || echo "")
     local repo_name
     repo_name=$(basename "$PWD")
     local suggested_url=""
@@ -456,8 +464,8 @@ add_or_update_remote() {
   fi
 
   echo -e "${COLOR_BLUE}Adding remote origin: ${COLOR_BOLD}$REMOTE_URL${COLOR_RESET}"
-  if run_git_command remote get-url origin &> /dev/null; then
-    EXISTING_REMOTE_URL=$(run_git_command remote get-url origin)
+  if run_command git remote get-url origin &> /dev/null; then
+    EXISTING_REMOTE_URL=$(run_command git remote get-url origin)
 
     # Determine if existing remote is HTTPS or SSH
     if [[ "$EXISTING_REMOTE_URL" == git@* ]]; then
@@ -491,7 +499,7 @@ add_or_update_remote() {
       fi
 
       if [[ "$UPDATE_REMOTE" =~ ^[Yy]$ ]]; then
-        if ! run_git_command remote set-url origin "$TARGET_REMOTE_URL"; then
+        if ! run_command git remote set-url origin "$TARGET_REMOTE_URL"; then
           error_exit "Failed to update remote 'origin' URL."
         fi
         echo -e "${COLOR_GREEN}✅ Remote 'origin' URL updated.${COLOR_RESET}"
@@ -515,7 +523,7 @@ add_or_update_remote() {
       fi
     fi
 
-    if ! run_git_command remote add origin "$REMOTE_URL"; then
+    if ! run_command git remote add origin "$REMOTE_URL"; then
       error_exit "Failed to add remote origin. It might already exist or the URL is invalid."
     fi
     echo -e "${COLOR_GREEN}✅ Remote origin added.${COLOR_RESET}"
@@ -537,7 +545,7 @@ push_to_remote() {
   fi
 
   echo -e "${COLOR_BLUE}Pushing changes to the remote repository (${COLOR_BOLD}$DEFAULT_BRANCH${COLOR_RESET}${COLOR_BLUE} branch)...${COLOR_RESET}"
-  if ! run_git_command push -u origin "$DEFAULT_BRANCH"; then
+  if ! run_command git push -u origin "$DEFAULT_BRANCH"; then
     error_exit "Failed to push changes to the remote repository. Common reasons include:\n  - Authentication issues: GitHub no longer supports password authentication. Please use a Personal Access Token (PAT) or SSH keys. For PATs, generate one from GitHub settings and use it as your password.\n  - Network problems.\n  - Remote repository has changes you need to pull first (e.g., 'git pull origin $DEFAULT_BRANCH')."
   fi
   echo -e "${COLOR_GREEN}🎉 Project successfully pushed to GitHub! 🎉${COLOR_RESET}"

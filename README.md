@@ -46,8 +46,8 @@ Scripts for analyzing Python code.
         *   `--guide` mode for step-by-step assistance.
         *   `--dry-run` mode to preview commands without executing them.
         *   Interactive prompts for commit messages and remote URLs, with smart suggestions.
-        *   Robust authentication flow for both SSH and Personal Access Tokens (PATs).
-        *   Clear logging of all git commands being executed.
+        *   Robust authentication flow for both SSH and Personal Access Tokens (PATs), with a bug fix for custom key paths.
+        *   Clear logging of all important commands being executed (not just git commands).
 *   **`auto-git-repo-push.sh`**: Note: This script has been removed to avoid duplication. The official script is now in the `git/` directory.
 
 ## Network Scripts
